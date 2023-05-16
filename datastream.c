@@ -1,22 +1,28 @@
-#include <stdio.h> // printf() fopen() fclose()
+#include <stdio.h> // printf() fopen() fclose() fprintf()
 #include <stdlib.h> // atoi() rand()
 #include <string.h> // strcmp()
 #include <pthread.h> // pthread_create() pthread_t
 #include <signal.h> // signal() kill()
 #include <unistd.h> // getpid()
 
-int number_of_keys = 1000; // 1000 KEYS
-int key_size = 1000; // 1000 CHAR 
-int buffer_size = 10; // 10 KEYS
-int delay_producer = 0; // 0 NANO SEC
-int delay_consumer = 0; // 0 NANO SEC
-int pid = 0;
+int number_of_keys = 1000;//KEYS
 
-char CHARSET[] = 
+// key_size includes an end line character '\n'
+int key_size = 1000;//CHAR 
+
+int buffer_size = 10;//KEYS
+
+int delay_producer = 0;//NANO SEC
+
+int delay_consumer = 0;//NANO SEC
+
+int pid = 0;//PROCESS ID
+
+// charset is used in choosing a random char
+char charset[] = 
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 struct BufferNode;
-
 void sigusr1_handler(int num);
 void sigint_handler(int num);
 void random_string(char str[], unsigned int str_size);
@@ -26,25 +32,26 @@ int main(int argc, char* argv[])
 {
     pid = getpid();
     
-    for(int i = 1; i < argc; i++) // Command Line Arguments
+    // Command Line Arguments
+    for(int i = 1; i < argc; i++)
     {
-        if(strcmp(argv[i], "--number_of_keys"))
+        if(!strcmp(argv[i], "--number_of_keys"))
         {
             number_of_keys = atoi(argv[++i]);
         }
-        else if(strcmp(argv[i], "--key_size"))
+        else if(!strcmp(argv[i], "--key_size"))
         {
             key_size = atoi(argv[++i]);
         }
-        else if(strcmp(argv[i], "--buffer_size"))
+        else if(!strcmp(argv[i], "--buffer_size"))
         {
             buffer_size = atoi(argv[++i]);
         }
-        else if(strcmp(argv[i], "--delay_producer"))
+        else if(!strcmp(argv[i], "--delay_producer"))
         {
             delay_producer = atoi(argv[++i]);
         }
-        else if(strcmp(argv[i], "--delay_consumer"))
+        else if(!strcmp(argv[i], "--delay_consumer"))
         {
             delay_consumer = atoi(argv[++i]);
         }
@@ -94,7 +101,7 @@ void random_string(char str[], unsigned int str_size)
 {
     for(int i = 0; i <= str_size - 2; i++)
     {
-        str[i] = CHARSET[rand() % 62];
+        str[i] = charset[rand() % 62];
     }
     str[str_size - 1] = '\n';
     str[str_size] = '\0';

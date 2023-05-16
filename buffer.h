@@ -1,4 +1,0 @@
-struct buffer
-{
-    /* data */
-};
