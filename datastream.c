@@ -3,7 +3,8 @@
 #include <string.h> // strcmp()
 #include <pthread.h> // pthread_create() pthread_t
 #include <signal.h> // signal() kill()
-#include <unistd.h> // getpid()
+#include <unistd.h> // getpid() pid_t fork()
+#include <time.h>
 
 int number_of_keys = 1000;//KEYS
 
@@ -16,7 +17,7 @@ int delay_producer = 0;//NANO SEC
 
 int delay_consumer = 0;//NANO SEC
 
-int pid = 0;//PROCESS ID
+pid_t pid = 0;//PROCESS ID
 
 // charset is used in choosing a random char
 char charset[] = 
@@ -69,27 +70,41 @@ int main(int argc, char* argv[])
     int generator_pthread_create_return_value = 
         pthread_create(&generator_thread_id, NULL,  generator, &generator_thread_arg);
 
-    printf("%d\n", generator_pthread_create_return_value);
+    printf("generator_pthread_create_return_value %d\n", generator_pthread_create_return_value);
 
     int generator_pthread_join_return_value = 
         pthread_join(generator_thread_id, NULL);
 
-    printf("%d\n", generator_pthread_join_return_value);
+    printf("generator_pthread_join_return_value %d\n", generator_pthread_join_return_value);
 
     return 0;
     
 }
 
-struct BufferNode
+struct Item
 {
     char* data;
-    struct BufferNode* next;
+    pid_t pid;
+    time_t creation_time;
 };
 
 
 void sigusr1_handler(int num)
 {
     printf("sigusr1_handler\n");
+    int producer_pid = fork();
+    if(producer_pid == 0)
+    {
+        producer();
+        return;
+    }
+    int consumer_pid = fork();
+    if(consumer_pid == 0)
+    {
+        consumer();
+        return;
+    }
+
 }
 
 void sigint_handler(int num)
@@ -129,19 +144,11 @@ void* generator(void* arg)
 void start_buffering()
 {
     // Circular Buffer Memory
-    struct BufferNode* node = (struct BufferNode*)malloc(sizeof(struct BufferNode));
-    (*node).data = NULL;
-    struct BufferNode* iter = node;
-    for(int i = 1; i < buffer_size; i++) {
-        (*iter).next = (struct BufferNode*)malloc(sizeof(struct BufferNode));
-        iter = (*iter).next;
-        (*iter).data = NULL;
-    }
-    (*iter).next = node;
+    struct Item ** buffer = (struct Item**)malloc(sizeof(struct Item) * buffer_size);
 
 }
 
-void* producer(void* arg)
+void producer()
 {
     FILE* fptr;
     fptr = fopen("original.txt", "r");
@@ -149,7 +156,7 @@ void* producer(void* arg)
     fclose(fptr);
 }
 
-void* consumer(void* arg)
+void consumer()
 {
     FILE* fptr;
     fptr = fopen("duplicate.txt", "w");
