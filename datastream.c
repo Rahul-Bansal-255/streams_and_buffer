@@ -15,6 +15,8 @@ int pid = 0;
 char CHARSET[] = 
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
+struct BufferNode;
+
 void sigusr1_handler(int num);
 void sigint_handler(int num);
 void random_string(char str[], unsigned int str_size);
@@ -71,6 +73,13 @@ int main(int argc, char* argv[])
     
 }
 
+struct BufferNode
+{
+    char* data;
+    struct BufferNode* next;
+};
+
+
 void sigusr1_handler(int num)
 {
     printf("sigusr1_handler\n");
@@ -83,13 +92,12 @@ void sigint_handler(int num)
 
 void random_string(char str[], unsigned int str_size)
 {
-    int i;
-    for(i = 0; i < str_size; i++)
+    for(int i = 0; i <= str_size - 2; i++)
     {
         str[i] = CHARSET[rand() % 62];
     }
-    str[str_size - 2] = '\n';
-    str[str_size - 1] = '\0';
+    str[str_size - 1] = '\n';
+    str[str_size] = '\0';
     return;
 }
 
@@ -100,7 +108,7 @@ void* generator(void* arg)
     FILE* fptr;
     fptr = fopen("original.txt", "w");
 
-    char str[key_size];
+    char str[key_size + 1];
     for(int i = 0; i < number_of_keys; i++)
     {
         random_string(str, key_size);
@@ -109,4 +117,35 @@ void* generator(void* arg)
     fclose(fptr);
     kill(pid, SIGUSR1);
     return NULL;
+}
+
+void start_buffering()
+{
+    // Circular Buffer Memory
+    struct BufferNode* node = (struct BufferNode*)malloc(sizeof(struct BufferNode));
+    (*node).data = NULL;
+    struct BufferNode* iter = node;
+    for(int i = 1; i < buffer_size; i++) {
+        (*iter).next = (struct BufferNode*)malloc(sizeof(struct BufferNode));
+        iter = (*iter).next;
+        (*iter).data = NULL;
+    }
+    (*iter).next = node;
+
+}
+
+void* producer(void* arg)
+{
+    FILE* fptr;
+    fptr = fopen("original.txt", "r");
+
+    fclose(fptr);
+}
+
+void* consumer(void* arg)
+{
+    FILE* fptr;
+    fptr = fopen("duplicate.txt", "w");
+
+    fclose(fptr);
 }
