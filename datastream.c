@@ -3,25 +3,20 @@
 #include <string.h> // strcmp()
 #include <pthread.h> // pthread_create() pthread_t
 #include <signal.h> // signal() kill()
-#include <unistd.h> // getpid() pid_t fork()
-#include <time.h>
+#include <unistd.h> // getpid() pid_t fork() getcwd()
+#include <time.h> // time_t
+#include <sys/ipc.h> // ftok()
+#include <sys/shm.h> // shmget()
 
 int number_of_keys = 1000;//KEYS
-
-// key_size includes an end line character '\n'
-int key_size = 1000;//CHAR 
-
 int buffer_size = 10;//KEYS
-
 int delay_producer = 0;//NANO SEC
-
 int delay_consumer = 0;//NANO SEC
 
 pid_t pid = 0;//PROCESS ID
 
 // charset is used in choosing a random char
-char charset[] = 
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 struct BufferNode;
 void sigusr1_handler(int num);
@@ -40,10 +35,6 @@ int main(int argc, char* argv[])
         {
             number_of_keys = atoi(argv[++i]);
         }
-        else if(!strcmp(argv[i], "--key_size"))
-        {
-            key_size = atoi(argv[++i]);
-        }
         else if(!strcmp(argv[i], "--buffer_size"))
         {
             buffer_size = atoi(argv[++i]);
@@ -58,24 +49,14 @@ int main(int argc, char* argv[])
         }
     }
 
-    printf("Setting Handlers\n");
+    // Setting Signal Handlers
     signal(SIGUSR1, sigusr1_handler);
     signal(SIGINT, sigint_handler);
 
-    printf("Creating generator thread\n");
-
+    // Creating And Joining Generator Thread
     pthread_t generator_thread_id;
-    int generator_thread_arg = 0;
-
-    int generator_pthread_create_return_value = 
-        pthread_create(&generator_thread_id, NULL,  generator, &generator_thread_arg);
-
-    printf("generator_pthread_create_return_value %d\n", generator_pthread_create_return_value);
-
-    int generator_pthread_join_return_value = 
-        pthread_join(generator_thread_id, NULL);
-
-    printf("generator_pthread_join_return_value %d\n", generator_pthread_join_return_value);
+    pthread_create(&generator_thread_id, NULL,  generator, NULL);
+    pthread_join(generator_thread_id, NULL);
 
     return 0;
     
@@ -83,7 +64,7 @@ int main(int argc, char* argv[])
 
 struct Item
 {
-    char* data;
+    char data[1000];
     pid_t pid;
     time_t creation_time;
 };
@@ -91,20 +72,20 @@ struct Item
 
 void sigusr1_handler(int num)
 {
-    printf("sigusr1_handler\n");
-    int producer_pid = fork();
+    create_buffer();
+
+    pid_t producer_pid = fork();
     if(producer_pid == 0)
     {
         producer();
-        return;
+        exit(0);
     }
-    int consumer_pid = fork();
+    pid_t consumer_pid = fork();
     if(consumer_pid == 0)
     {
         consumer();
-        return;
+        exit(0);
     }
-
 }
 
 void sigint_handler(int num)
@@ -125,31 +106,59 @@ void random_string(char str[], unsigned int str_size)
 
 void* generator(void* arg)
 {
-    printf("generator\n");
-
     FILE* fptr;
     fptr = fopen("original.txt", "w");
 
-    char str[key_size + 1];
+    char str[1001];
     for(int i = 0; i < number_of_keys; i++)
     {
-        random_string(str, key_size);
+        random_string(str, 1000);
         fprintf(fptr, "%s", str);
     }
+
     fclose(fptr);
+
     kill(pid, SIGUSR1);
-    return NULL;
 }
 
-void start_buffering()
-{
-    // Circular Buffer Memory
-    struct Item ** buffer = (struct Item**)malloc(sizeof(struct Item) * buffer_size);
+void buffer_path(char *cwd, int cwd_size) {
+    getcwd(cwd, cwd_size);
+    char str[] = "/buffer";
+    int i = 0;
+    while(cwd[i] != '\0') 
+    {
+        i++;
+    }
+    for(int j = 0; j < sizeof(str); j++)
+    {
+        cwd[i] = str[j];
+        i++;
+    }
+    cwd[i] = '\0';
+}
 
+void create_buffer()
+{
+    char cwd[4096];
+    buffer_path(cwd, 4096);
+    key_t sysvipc_key_a = ftok(cwd, 'a');
+    int shm_id_a = shmget(sysvipc_key_a, sizeof(struct Item) * buffer_size, IPC_CREAT);
+    key_t sysvipc_key_b = ftok(cwd, 'b');
+    int shm_id_b = shmget(sysvipc_key_b, sizeof(int) * buffer_size, IPC_CREAT);
 }
 
 void producer()
 {
+    char cwd[4096];
+    buffer_path(cwd, 4096);
+    key_t sysvipc_key_a = ftok(cwd, 'a');
+    int shm_id_a = shmget(sysvipc_key_a, sizeof(struct Item) * buffer_size, NULL);
+    struct Item buffer[] = (struct Item*)shmat(shm_id_a, NULL, NULL);
+    key_t sysvipc_key_b = ftok(cwd, 'b');
+    int shm_id_b = shmget(sysvipc_key_b, sizeof(int) * buffer_size, NULL);
+    int mark[] = (int*)shmat(shm_id_b, NULL, NULL);
+
+    printf("Inside Producer\n");
     FILE* fptr;
     fptr = fopen("original.txt", "r");
 
@@ -158,6 +167,16 @@ void producer()
 
 void consumer()
 {
+    char cwd[4096];
+    buffer_path(cwd, 4096);
+    key_t sysvipc_key_a = ftok(cwd, 'a');
+    int shm_id_a = shmget(sysvipc_key_a, sizeof(struct Item) * buffer_size, NULL);
+    struct Item buffer[] = (struct Item*)shmat(shm_id_a, NULL, NULL);
+    key_t sysvipc_key_b = ftok(cwd, 'b');
+    int shm_id_b = shmget(sysvipc_key_b, sizeof(int) * buffer_size, NULL);
+    int mark[] = (int*)shmat(shm_id_b, NULL, NULL);
+    
+    printf("Inside Consumer\n");
     FILE* fptr;
     fptr = fopen("duplicate.txt", "w");
 
