@@ -157,7 +157,7 @@ void create_buffer()
 
     printf("errno %d\n", errno);
 
-    for(int i = 1; i < buffer_size; i++) 
+    for(int i = 0; i < buffer_size; i++) 
     {
         buffer[i].write = 1;
     }
@@ -217,7 +217,7 @@ void consumer()
     int i = 0;
     int count = 0;
 
-    while(count <= number_of_keys) 
+    while(count < number_of_keys) 
     {
         printf("consumer loop %d\n", i);
         while(buffer[i].write == 1) {}
