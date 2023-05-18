@@ -7,11 +7,10 @@
 #include <time.h> // time_t
 #include <sys/ipc.h> // ftok()
 #include <sys/shm.h> // shmget()
+#include <errno.h> // 
 
 int number_of_keys = 10;//KEYS
 int buffer_size = 3;//KEYS
-int delay_producer = 0;//NANO SEC
-int delay_consumer = 0;//NANO SEC
 
 pid_t producer_pid;
 pid_t consumer_pid;
@@ -33,6 +32,7 @@ void consumer();
 
 int main(int argc, char* argv[])
 {
+    printf("Start\n");
     pid = getpid();
     
     // Command Line Arguments
@@ -46,25 +46,22 @@ int main(int argc, char* argv[])
         {
             buffer_size = atoi(argv[++i]);
         }
-        else if(!strcmp(argv[i], "--delay_producer"))
-        {
-            delay_producer = atoi(argv[++i]);
-        }
-        else if(!strcmp(argv[i], "--delay_consumer"))
-        {
-            delay_consumer = atoi(argv[++i]);
-        }
     }
+    printf("cmd args\n");
 
     // Setting Signal Handlers
     signal(SIGUSR1, sigusr1_handler);
     // signal(SIGUSR2, sigusr2_handler_parent);
+    printf("signal set\n");
 
     // Creating And Joining Generator Thread
     pthread_t generator_thread_id;
     pthread_create(&generator_thread_id, 0,  generator, 0);
     pthread_join(generator_thread_id, 0);
 
+    while (1) {}
+    
+    printf("parent end\n");
     return 0;
     
 }
@@ -79,21 +76,25 @@ struct Item
 
 void sigusr1_handler(int num)
 {
+    printf("inside sigusr1\n");
     create_buffer();
 
     producer_pid = fork();
     if(producer_pid == 0)
     {
+        printf("producer fork\n");
         producer();
         exit(0);
     }
+    printf("producer pid : %d\n", producer_pid);
     consumer_pid = fork();
     if(consumer_pid == 0)
     {
-        sleep(1);
+        printf("consumer fork\n");
         consumer();
         exit(0);
     }
+    printf("consumer pid : %d\n", consumer_pid);
 }
 
 void random_string(char str[], unsigned int str_size)
@@ -109,6 +110,7 @@ void random_string(char str[], unsigned int str_size)
 
 void* generator(void* arg)
 {
+    printf("inside gen\n");
     FILE* fptr;
     fptr = fopen("original.txt", "w");
 
@@ -143,57 +145,95 @@ void buffer_path(char *cwd, int cwd_size)
 
 void create_buffer()
 {
+    printf("inside create_buffer\n");
     char cwd[4096];
     buffer_path(cwd, 4096);
-    key_t sysvipc_key_a = ftok(cwd, 'a');
-    int shm_id_a = shmget(sysvipc_key_a, sizeof(struct Item) * buffer_size, IPC_CREAT);
-    key_t sysvipc_key_b = ftok(cwd, 'b');
-    int shm_id_b = shmget(sysvipc_key_b, sizeof(int) * buffer_size, IPC_CREAT);
+
+    key_t key_a = ftok(cwd, getpid());
+    int shm_id_a = shmget(key_a, sizeof(struct Item) * buffer_size, 0666|IPC_CREAT);
+
+    printf("key_a : %d\n", key_a);
+    printf("shm_id_a : %d\n", shm_id_a);
+
+    key_t key_b = ftok(cwd, getpid() + 1);
+    int shm_id_b = shmget(key_b, sizeof(int) * buffer_size, IPC_CREAT|0666);
+    int *mark = (int*)shmat(shm_id_b, 0, 0);
+
+    printf("key_b : %d\n", key_b);
+    printf("shm_id_b : %d\n", shm_id_b);
+    printf("%p\n", mark);
+
+    printf("errno %d\n", errno);
+
+    mark[0] = 1;
+    for(int i = 1; i < buffer_size; i++) 
+    {
+        mark[i] = 0;
+    }
 }
 
 void producer()
 {
+    printf("inside producer\n");
     char cwd[4096];
     buffer_path(cwd, 4096);
 
-    key_t sysvipc_key_a = ftok(cwd, 'a');
-    int shm_id_a = shmget(sysvipc_key_a, sizeof(struct Item) * buffer_size, 0);
+    key_t key_a = ftok(cwd, getppid());
+    int shm_id_a = shmget(key_a, sizeof(struct Item) * buffer_size, 0);
     struct Item *buffer = (struct Item*)shmat(shm_id_a, 0, 0);
     
-    key_t sysvipc_key_b = ftok(cwd, 'b');
-    int shm_id_b = shmget(sysvipc_key_b, sizeof(int) * buffer_size, 0);
+    printf("producer key_a : %d\n", key_a);
+    printf("producer shm_id_a : %d\n", shm_id_a);
+
+    key_t key_b = ftok(cwd, getppid() + 1);
+    int shm_id_b = shmget(key_b, sizeof(int) * buffer_size, 0);
     int *mark = (int*)shmat(shm_id_b, 0, 0);
+
+    printf("producer key_b : %d\n", key_b);
+    printf("producer shm_id_b : %d\n", shm_id_b);
 
     FILE* fptr;
     fptr = fopen("original.txt", "r");
 
     int i = 0;
 
-    while(feof(fptr) != 0) 
+    while(feof(fptr) == 0) 
     {
-        while(mark[i] == 1) {}
+        printf("producer loop %d\n", i);
         mark[i] = 1;
         fgets(buffer[i].data, 10, fptr);
+        printf("key : %s\n", buffer[i].data);
         buffer[i].pid = getpid();
         time(&buffer[i].creation_time);
         mark[i] = 0;
         i++;
         i = i % buffer_size;
+        while(mark[i] == 1) {}
     }
     
     fclose(fptr);
+    printf("producer exit\n");
 }
 
 void consumer()
 {
+    printf("inside consumer\n");
     char cwd[4096];
     buffer_path(cwd, 4096);
-    key_t sysvipc_key_a = ftok(cwd, 'a');
-    int shm_id_a = shmget(sysvipc_key_a, sizeof(struct Item) * buffer_size, 0);
+
+    key_t key_a = ftok(cwd, getppid());
+    int shm_id_a = shmget(key_a, sizeof(struct Item) * buffer_size, 0);
     struct Item *buffer = (struct Item*)shmat(shm_id_a, 0, 0);
-    key_t sysvipc_key_b = ftok(cwd, 'b');
-    int shm_id_b = shmget(sysvipc_key_b, sizeof(int) * buffer_size, 0);
+
+    printf("consumer key_a : %d\n", key_a);
+    printf("consumer shm_id_a : %d\n", shm_id_a);
+
+    key_t key_b = ftok(cwd, getppid() + 1);
+    int shm_id_b = shmget(key_b, sizeof(int) * buffer_size, 0);
     int *mark = (int*)shmat(shm_id_b, 0, 0);
+
+    printf("consumer key_b : %d\n", key_b);
+    printf("consumer shm_id_b : %d\n", shm_id_b);
     
     FILE* fptr;
     fptr = fopen("duplicate.txt", "w");
@@ -203,6 +243,7 @@ void consumer()
 
     while(count <= number_of_keys) 
     {
+        printf("consumer loop %d\n", i);
         while(mark[i] == 1) {}
         mark[i] = 1;
         fprintf(fptr, buffer[i].data);
@@ -213,4 +254,5 @@ void consumer()
     }
 
     fclose(fptr);
+    printf("consumer exit\n");
 }
