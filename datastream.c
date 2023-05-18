@@ -68,9 +68,10 @@ int main(int argc, char* argv[])
 
 struct Item
 {
-    char data[10];
+    char data[11];
     pid_t pid;
     time_t creation_time;
+    int write;
 };
 
 
@@ -99,12 +100,10 @@ void sigusr1_handler(int num)
 
 void random_string(char str[], unsigned int str_size)
 {
-    for(int i = 0; i <= str_size - 2; i++)
+    for(int i = 0; i < str_size; i++)
     {
         str[i] = charset[rand() % 62];
     }
-    str[str_size - 1] = '\n';
-    str[str_size] = '\0';
     return;
 }
 
@@ -114,7 +113,7 @@ void* generator(void* arg)
     FILE* fptr;
     fptr = fopen("original.txt", "w");
 
-    char str[1001];
+    char str[10];
     for(int i = 0; i < number_of_keys; i++)
     {
         random_string(str, 10);
@@ -151,24 +150,16 @@ void create_buffer()
 
     key_t key_a = ftok(cwd, getpid());
     int shm_id_a = shmget(key_a, sizeof(struct Item) * buffer_size, 0666|IPC_CREAT);
+    struct Item *buffer = (struct Item*)shmat(shm_id_a, 0, 0);
 
     printf("key_a : %d\n", key_a);
     printf("shm_id_a : %d\n", shm_id_a);
 
-    key_t key_b = ftok(cwd, getpid() + 1);
-    int shm_id_b = shmget(key_b, sizeof(int) * buffer_size, IPC_CREAT|0666);
-    int *mark = (int*)shmat(shm_id_b, 0, 0);
-
-    printf("key_b : %d\n", key_b);
-    printf("shm_id_b : %d\n", shm_id_b);
-    printf("%p\n", mark);
-
     printf("errno %d\n", errno);
 
-    mark[0] = 1;
     for(int i = 1; i < buffer_size; i++) 
     {
-        mark[i] = 0;
+        buffer[i].write = 1;
     }
 }
 
@@ -185,13 +176,6 @@ void producer()
     printf("producer key_a : %d\n", key_a);
     printf("producer shm_id_a : %d\n", shm_id_a);
 
-    key_t key_b = ftok(cwd, getppid() + 1);
-    int shm_id_b = shmget(key_b, sizeof(int) * buffer_size, 0);
-    int *mark = (int*)shmat(shm_id_b, 0, 0);
-
-    printf("producer key_b : %d\n", key_b);
-    printf("producer shm_id_b : %d\n", shm_id_b);
-
     FILE* fptr;
     fptr = fopen("original.txt", "r");
 
@@ -200,15 +184,14 @@ void producer()
     while(feof(fptr) == 0) 
     {
         printf("producer loop %d\n", i);
-        mark[i] = 1;
-        fgets(buffer[i].data, 10, fptr);
+        while(buffer[i].write == 0) {}
+        fgets(buffer[i].data, 11, fptr);
         printf("key : %s\n", buffer[i].data);
         buffer[i].pid = getpid();
         time(&buffer[i].creation_time);
-        mark[i] = 0;
+        buffer[i].write = 0;
         i++;
         i = i % buffer_size;
-        while(mark[i] == 1) {}
     }
     
     fclose(fptr);
@@ -228,13 +211,6 @@ void consumer()
     printf("consumer key_a : %d\n", key_a);
     printf("consumer shm_id_a : %d\n", shm_id_a);
 
-    key_t key_b = ftok(cwd, getppid() + 1);
-    int shm_id_b = shmget(key_b, sizeof(int) * buffer_size, 0);
-    int *mark = (int*)shmat(shm_id_b, 0, 0);
-
-    printf("consumer key_b : %d\n", key_b);
-    printf("consumer shm_id_b : %d\n", shm_id_b);
-    
     FILE* fptr;
     fptr = fopen("duplicate.txt", "w");
 
@@ -244,10 +220,9 @@ void consumer()
     while(count <= number_of_keys) 
     {
         printf("consumer loop %d\n", i);
-        while(mark[i] == 1) {}
-        mark[i] = 1;
+        while(buffer[i].write == 1) {}
         fprintf(fptr, buffer[i].data);
-        mark[i] = 0;
+        buffer[i].write = 1;
         i++;
         count++;
         i = i % buffer_size;
