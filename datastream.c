@@ -32,7 +32,7 @@ void consumer();
 
 int main(int argc, char* argv[])
 {
-    printf("Start\n");
+    printf("**** Program Start ****\n");
     pid = getpid();
     
     // Command Line Arguments
@@ -47,21 +47,19 @@ int main(int argc, char* argv[])
             buffer_size = atoi(argv[++i]);
         }
     }
-    printf("cmd args\n");
 
     // Setting Signal Handlers
     signal(SIGUSR1, sigusr1_handler);
-    // signal(SIGUSR2, sigusr2_handler_parent);
-    printf("signal set\n");
 
     // Creating And Joining Generator Thread
     pthread_t generator_thread_id;
     pthread_create(&generator_thread_id, 0,  generator, 0);
     pthread_join(generator_thread_id, 0);
 
-    while (1) {}
+    while (1) {
+        sleep(1);
+    }
     
-    printf("parent end\n");
     return 0;
     
 }
@@ -230,4 +228,5 @@ void consumer()
 
     fclose(fptr);
     printf("consumer exit\n");
+    kill(getppid(), SIGINT);
 }
