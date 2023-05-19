@@ -140,7 +140,7 @@ void create_buffer()
     char cwd[4096];
     buffer_path(cwd, 4096);
 
-    key_t key_a = ftok(cwd, 'a');
+    key_t key_a = ftok(cwd, getpid());
     int shm_id_a = shmget(key_a, sizeof(struct Item) * buffer_size, 0666|IPC_CREAT);
     struct Item *buffer = (struct Item*)shmat(shm_id_a, 0, 0);
 
@@ -156,7 +156,7 @@ void producer()
     char cwd[4096];
     buffer_path(cwd, 4096);
 
-    key_t key_a = ftok(cwd, 'a');
+    key_t key_a = ftok(cwd, getppid());
     int shm_id_a = shmget(key_a, sizeof(struct Item) * buffer_size, 0);
     struct Item *buffer = (struct Item*)shmat(shm_id_a, 0, 0);
 
@@ -190,7 +190,7 @@ void consumer()
     char cwd[4096];
     buffer_path(cwd, 4096);
 
-    key_t key_a = ftok(cwd, 'a');
+    key_t key_a = ftok(cwd, getppid());
     int shm_id_a = shmget(key_a, sizeof(struct Item) * buffer_size, 0);
     struct Item *buffer = (struct Item*)shmat(shm_id_a, 0, 0);
 
